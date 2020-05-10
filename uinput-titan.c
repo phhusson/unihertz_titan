@@ -28,7 +28,7 @@ static int uinput_init() {
             .product = 0xbeaf,
             .version = 3,
         },
-        .name = "titan uinput",
+        .name = "titan-uinput",
         .ff_effects_max = 0,
     };
     write(fd, &setup, sizeof(setup));
