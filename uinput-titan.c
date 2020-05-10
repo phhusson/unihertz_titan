@@ -28,7 +28,7 @@ static int uinput_init() {
             .product = 0xbeaf,
             .version = 3,
         },
-        .name = "titan uinput",
+        .name = "titan-uinput",
         .ff_effects_max = 0,
     };
     write(fd, &setup, sizeof(setup));
@@ -59,7 +59,9 @@ static int original_input_init() {
         char name[128];
         ioctl(fd, EVIOCGNAME(sizeof(name)), name);
         if(strcmp(name, "mtk-pad") == 0) {
+#ifndef TITAN_MTK_PAD_NOGRAB
             ioctl(fd, EVIOCGRAB, 1);
+#endif
             return fd;
         }
 
@@ -143,6 +145,14 @@ static void ev_parse_abs(struct input_event e) {
     printf("Got abs event %s: %d\n", absName, e.value);
 }
 
+static void hide_pointer(int ufd) {
+#ifndef TITAN_MTK_PAD_NO_HIDE_POINTER
+    insertEvent(ufd, EV_REL, REL_X, 9000);
+    insertEvent(ufd, EV_REL, REL_Y, 9000);
+    insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
+#endif
+}
+
 static int wasTouched, oldX, oldY;
 //touchpanel resolution is 1440x720
 static void decide(int ufd, int touched, int x, int y) {
@@ -157,34 +167,42 @@ static void decide(int ufd, int touched, int x, int y) {
         return;
     }
     printf("%d, %d, %d, %d, %d\n", touched, x, y, y - oldY, x - oldX);
+#ifndef TITAN_MTK_PAD_DISABLE_Y
     if( (y - oldY) > 80) {
-        insertEvent(ufd, EV_REL, REL_HWHEEL, 1);
-        insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
-        oldY = y;
-        oldX = x;
-        return;
-    }
-    if( (y - oldY) < -80) {
-        insertEvent(ufd, EV_REL, REL_HWHEEL, -1);
-        insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
-        oldY = y;
-        oldX = x;
-        return;
-    }
-    if( (x - oldX) < -120) {
-        insertEvent(ufd, EV_REL, REL_WHEEL, -1);
-        insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
-        oldY = y;
-        oldX = x;
-        return;
-    }
-    if( (x - oldX) > 120) {
+        hide_pointer(ufd);
         insertEvent(ufd, EV_REL, REL_WHEEL, 1);
         insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
         oldY = y;
         oldX = x;
         return;
     }
+    if( (y - oldY) < -80) {
+        hide_pointer(ufd);
+        insertEvent(ufd, EV_REL, REL_WHEEL, -1);
+        insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
+        oldY = y;
+        oldX = x;
+        return;
+    }
+#endif
+#ifndef TITAN_MTK_PAD_DISABLE_X
+    if( (x - oldX) < -120) {
+        hide_pointer(ufd);
+        insertEvent(ufd, EV_REL, REL_HWHEEL, -1);
+        insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
+        oldY = y;
+        oldX = x;
+        return;
+    }
+    if( (x - oldX) > 120) {
+        hide_pointer(ufd);
+        insertEvent(ufd, EV_REL, REL_HWHEEL, 1);
+        insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
+        oldY = y;
+        oldX = x;
+        return;
+    }
+#endif
 }
 
 int main() {
