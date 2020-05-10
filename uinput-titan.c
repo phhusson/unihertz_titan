@@ -59,7 +59,9 @@ static int original_input_init() {
         char name[128];
         ioctl(fd, EVIOCGNAME(sizeof(name)), name);
         if(strcmp(name, "mtk-pad") == 0) {
+#ifndef TITAN_MTK_PAD_NOGRAB
             ioctl(fd, EVIOCGRAB, 1);
+#endif
             return fd;
         }
 
@@ -144,9 +146,11 @@ static void ev_parse_abs(struct input_event e) {
 }
 
 static void hide_pointer(int ufd) {
+#ifndef TITAN_MTK_PAD_NO_HIDE_POINTER
     insertEvent(ufd, EV_REL, REL_X, 9000);
     insertEvent(ufd, EV_REL, REL_Y, 9000);
     insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
+#endif
 }
 
 static int wasTouched, oldX, oldY;
@@ -163,6 +167,7 @@ static void decide(int ufd, int touched, int x, int y) {
         return;
     }
     printf("%d, %d, %d, %d, %d\n", touched, x, y, y - oldY, x - oldX);
+#ifndef TITAN_MTK_PAD_DISABLE_Y
     if( (y - oldY) > 80) {
         hide_pointer(ufd);
         insertEvent(ufd, EV_REL, REL_WHEEL, 1);
@@ -179,6 +184,8 @@ static void decide(int ufd, int touched, int x, int y) {
         oldX = x;
         return;
     }
+#endif
+#ifndef TITAN_MTK_PAD_DISABLE_X
     if( (x - oldX) < -120) {
         hide_pointer(ufd);
         insertEvent(ufd, EV_REL, REL_HWHEEL, -1);
@@ -195,6 +202,7 @@ static void decide(int ufd, int touched, int x, int y) {
         oldX = x;
         return;
     }
+#endif
 }
 
 int main() {
