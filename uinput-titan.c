@@ -158,28 +158,28 @@ static void decide(int ufd, int touched, int x, int y) {
     }
     printf("%d, %d, %d, %d, %d\n", touched, x, y, y - oldY, x - oldX);
     if( (y - oldY) > 80) {
-        insertEvent(ufd, EV_REL, REL_HWHEEL, 1);
+        insertEvent(ufd, EV_REL, REL_WHEEL, 1);
         insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
         oldY = y;
         oldX = x;
         return;
     }
     if( (y - oldY) < -80) {
-        insertEvent(ufd, EV_REL, REL_HWHEEL, -1);
-        insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
-        oldY = y;
-        oldX = x;
-        return;
-    }
-    if( (x - oldX) < -120) {
         insertEvent(ufd, EV_REL, REL_WHEEL, -1);
         insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
         oldY = y;
         oldX = x;
         return;
     }
+    if( (x - oldX) < -120) {
+        insertEvent(ufd, EV_REL, REL_HWHEEL, -1);
+        insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
+        oldY = y;
+        oldX = x;
+        return;
+    }
     if( (x - oldX) > 120) {
-        insertEvent(ufd, EV_REL, REL_WHEEL, 1);
+        insertEvent(ufd, EV_REL, REL_HWHEEL, 1);
         insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
         oldY = y;
         oldX = x;
