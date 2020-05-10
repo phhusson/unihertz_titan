@@ -143,6 +143,12 @@ static void ev_parse_abs(struct input_event e) {
     printf("Got abs event %s: %d\n", absName, e.value);
 }
 
+static void hide_pointer(int ufd) {
+    insertEvent(ufd, EV_REL, REL_X, 9000);
+    insertEvent(ufd, EV_REL, REL_Y, 9000);
+    insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
+}
+
 static int wasTouched, oldX, oldY;
 //touchpanel resolution is 1440x720
 static void decide(int ufd, int touched, int x, int y) {
@@ -158,6 +164,7 @@ static void decide(int ufd, int touched, int x, int y) {
     }
     printf("%d, %d, %d, %d, %d\n", touched, x, y, y - oldY, x - oldX);
     if( (y - oldY) > 80) {
+        hide_pointer(ufd);
         insertEvent(ufd, EV_REL, REL_WHEEL, 1);
         insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
         oldY = y;
@@ -165,6 +172,7 @@ static void decide(int ufd, int touched, int x, int y) {
         return;
     }
     if( (y - oldY) < -80) {
+        hide_pointer(ufd);
         insertEvent(ufd, EV_REL, REL_WHEEL, -1);
         insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
         oldY = y;
@@ -172,6 +180,7 @@ static void decide(int ufd, int touched, int x, int y) {
         return;
     }
     if( (x - oldX) < -120) {
+        hide_pointer(ufd);
         insertEvent(ufd, EV_REL, REL_HWHEEL, -1);
         insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
         oldY = y;
@@ -179,6 +188,7 @@ static void decide(int ufd, int touched, int x, int y) {
         return;
     }
     if( (x - oldX) > 120) {
+        hide_pointer(ufd);
         insertEvent(ufd, EV_REL, REL_HWHEEL, 1);
         insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
         oldY = y;
