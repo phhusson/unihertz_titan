@@ -246,6 +246,7 @@ static void decide(int ufd, int touched, int x, int y) {
 }
 
 void *keyboard_monitor(void* ptr) {
+    (void) ptr;
     //aw9523-key
     int fd = open_ev("aw9523-key");
 
