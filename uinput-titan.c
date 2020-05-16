@@ -5,9 +5,23 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <pthread.h>
+
+uint64_t now() {
+    uint64_t t;
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    t = tv.tv_usec;
+    t += (tv.tv_sec % 1000*1000*1000) * 1000*1000LL;
+    return t;
+}
+
+//lastTimestamp is in total us mod 10^15
+static uint64_t lastTimestamp;
 
 static void insertEvent(int fd, unsigned short type, unsigned short code, int value) {
     struct input_event e;
@@ -42,6 +56,8 @@ static int uinput_init() {
     ioctl(fd, UI_SET_KEYBIT, BTN_LEFT);
     ioctl(fd, UI_SET_KEYBIT, BTN_RIGHT);
     ioctl(fd, UI_SET_KEYBIT, BTN_WHEEL);
+    ioctl(fd, UI_SET_KEYBIT, KEY_LEFT);
+    ioctl(fd, UI_SET_KEYBIT, KEY_RIGHT);
     ioctl(fd, UI_SET_PROPBIT, INPUT_PROP_POINTER);
 
     const char phys[] = "this/is/a/virtual/device/for/scrolling";
@@ -50,7 +66,8 @@ static int uinput_init() {
     return fd;
 }
 
-static int original_input_init() {
+
+static int open_ev(const char *lookupName) {
     char *path = NULL;
     for(int i=0; i<64;i++) {
         asprintf(&path, "/dev/input/event%d", i);
@@ -58,8 +75,7 @@ static int original_input_init() {
         if(fd < 0) continue;
         char name[128];
         ioctl(fd, EVIOCGNAME(sizeof(name)), name);
-        if(strcmp(name, "mtk-pad") == 0) {
-            ioctl(fd, EVIOCGRAB, 1);
+        if(strcmp(name, lookupName) == 0) {
             return fd;
         }
 
@@ -67,6 +83,13 @@ static int original_input_init() {
     }
     free(path);
     return -1;
+}
+
+static int original_input_init() {
+    int fd = open_ev("mtk-pad");
+    if(fd<0) return fd;
+    ioctl(fd, EVIOCGRAB, 1);
+    return fd;
 }
 
 
@@ -146,6 +169,9 @@ static void ev_parse_abs(struct input_event e) {
 static int wasTouched, oldX, oldY;
 //touchpanel resolution is 1440x720
 static void decide(int ufd, int touched, int x, int y) {
+    if(wasTouched && !touched) {
+        printf("single tap %d, %d, %d, %d\n", x, y, y - oldY, x - oldX);
+    }
     if(!touched) {
         wasTouched = 0;
         return;
@@ -156,30 +182,62 @@ static void decide(int ufd, int touched, int x, int y) {
         wasTouched = touched;
         return;
     }
+    uint64_t d = lastTimestamp - now();
+    //500ms after typing ignore
+    if(d < 300*1000) {
+        oldX = x;
+        oldY = y;
+        return;
+    }
     printf("%d, %d, %d, %d, %d\n", touched, x, y, y - oldY, x - oldX);
-    if( (y - oldY) > 80) {
-        insertEvent(ufd, EV_REL, REL_HWHEEL, 1);
+    //2/3 width right side is used for scrolling
+    if(x > 300) {
+        if( (y - oldY) > 60) {
+            insertEvent(ufd, EV_REL, REL_WHEEL, 1);
+            insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
+            oldY = y;
+            oldX = x;
+            return;
+        }
+        if( (y - oldY) < -60) {
+            insertEvent(ufd, EV_REL, REL_WHEEL, -1);
+            insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
+            oldY = y;
+            oldX = x;
+            return;
+        }
+    } else {
+        //1/3 left side is used to trigger notifications
+        if( (y - oldY) > 280) {
+            system("cmd statusbar expand-notifications");
+            oldY = y;
+            oldX = x;
+            return;
+        }
+        if( (y - oldY) < -280) {
+            system("cmd statusbar collapse");
+            insertEvent(ufd, EV_REL, REL_WHEEL, -1);
+            insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
+            oldY = y;
+            oldX = x;
+            return;
+        }
+    }
+    if( (x - oldX) < -180) {
+        //insertEvent(ufd, EV_REL, REL_WHEEL, -1);
+        insertEvent(ufd, EV_KEY, KEY_LEFT, 1);
+        insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
+        insertEvent(ufd, EV_KEY, KEY_LEFT, 0);
         insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
         oldY = y;
         oldX = x;
         return;
     }
-    if( (y - oldY) < -80) {
-        insertEvent(ufd, EV_REL, REL_HWHEEL, -1);
+    if( (x - oldX) > 180) {
+        //insertEvent(ufd, EV_REL, REL_WHEEL, 1);
+        insertEvent(ufd, EV_KEY, KEY_RIGHT, 1);
         insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
-        oldY = y;
-        oldX = x;
-        return;
-    }
-    if( (x - oldX) < -120) {
-        insertEvent(ufd, EV_REL, REL_WHEEL, -1);
-        insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
-        oldY = y;
-        oldX = x;
-        return;
-    }
-    if( (x - oldX) > 120) {
-        insertEvent(ufd, EV_REL, REL_WHEEL, 1);
+        insertEvent(ufd, EV_KEY, KEY_RIGHT, 0);
         insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
         oldY = y;
         oldX = x;
@@ -187,9 +245,24 @@ static void decide(int ufd, int touched, int x, int y) {
     }
 }
 
+void *keyboard_monitor(void* ptr) {
+    //aw9523-key
+    int fd = open_ev("aw9523-key");
+
+    while(1) {
+        struct input_event e;
+        if(read(fd, &e, sizeof(e)) != sizeof(e)) break;
+        lastTimestamp = now();
+    }
+    return NULL;
+}
+
 int main() {
     int ufd = uinput_init();
     int origfd = original_input_init();
+
+    pthread_t keyboard_monitor_thread;
+    pthread_create(&keyboard_monitor_thread, NULL, keyboard_monitor, NULL);
 
     int currentlyTouched = 0;
     int currentX = -1;
