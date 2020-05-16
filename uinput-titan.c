@@ -11,17 +11,17 @@
 #include <string.h>
 #include <pthread.h>
 
+//now() is in total us mod 10^15
 uint64_t now() {
     uint64_t t;
     struct timeval tv;
     gettimeofday(&tv, NULL);
     t = tv.tv_usec;
-    t += (tv.tv_sec % 1000*1000*1000) * 1000*1000LL;
+    t += (tv.tv_sec % (1000*1000*1000)) * 1000*1000LL;
     return t;
 }
 
-//lastTimestamp is in total us mod 10^15
-static uint64_t lastTimestamp;
+static uint64_t lastKbdTimestamp;
 
 static void insertEvent(int fd, unsigned short type, unsigned short code, int value) {
     struct input_event e;
@@ -58,6 +58,7 @@ static int uinput_init() {
     ioctl(fd, UI_SET_KEYBIT, BTN_WHEEL);
     ioctl(fd, UI_SET_KEYBIT, KEY_LEFT);
     ioctl(fd, UI_SET_KEYBIT, KEY_RIGHT);
+    ioctl(fd, UI_SET_KEYBIT, KEY_TAB);
     ioctl(fd, UI_SET_PROPBIT, INPUT_PROP_POINTER);
 
     const char phys[] = "this/is/a/virtual/device/for/scrolling";
@@ -166,11 +167,43 @@ static void ev_parse_abs(struct input_event e) {
     printf("Got abs event %s: %d\n", absName, e.value);
 }
 
-static int wasTouched, oldX, oldY;
+int isInRect(int x, int y, int top, int bottom, int left, int right) {
+    return
+        (x > left && x < right && y > top && y < bottom);
+}
+
+int injectKey(int ufd, int key) {
+    insertEvent(ufd, EV_KEY, key, 1);
+    insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
+    insertEvent(ufd, EV_KEY, key, 0);
+    insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
+    return 0;
+}
+
+static int wasTouched, oldX, oldY, nEventsInSwipe;
+static int64_t startT, lastSingleTapT;
+static int lastSingleTapX, lastSingleTapY, lastSingleTapDuration;
 //touchpanel resolution is 1440x720
 static void decide(int ufd, int touched, int x, int y) {
-    if(wasTouched && !touched) {
-        printf("single tap %d, %d, %d, %d\n", x, y, y - oldY, x - oldX);
+    uint64_t d = now() - lastKbdTimestamp;
+
+    if(wasTouched && !touched && nEventsInSwipe == 0) {
+        int64_t duration = now() - startT;
+        int64_t timeSinceLastSingleTap = now() - lastSingleTapT;
+        printf("single tap %d, %d, %d, %d; %lld %lld\n", x, y, y - oldY, x - oldX, duration, timeSinceLastSingleTap);
+
+        if(duration < 120*1000LL && timeSinceLastSingleTap < 500*1000LL && d > 1000*1000LL) {
+            printf("Got double tap\n");
+            if(isInRect(oldX, oldY, 570, 721, 600, 900)) {
+                printf("Double tap on space key\n");
+                injectKey(ufd, KEY_TAB);
+            }
+        }
+
+        lastSingleTapX = oldX;
+        lastSingleTapY = oldY;
+        lastSingleTapT = startT;
+        lastSingleTapDuration = duration;
     }
     if(!touched) {
         wasTouched = 0;
@@ -179,16 +212,20 @@ static void decide(int ufd, int touched, int x, int y) {
     if(!wasTouched && touched) {
         oldX = x;
         oldY = y;
+        startT = now();
         wasTouched = touched;
+        nEventsInSwipe = 0;
         return;
     }
-    uint64_t d = lastTimestamp - now();
+
     //500ms after typing ignore
-    if(d < 300*1000) {
+    if(d < 500*1000) {
         oldX = x;
         oldY = y;
         return;
     }
+
+    nEventsInSwipe++;
     printf("%d, %d, %d, %d, %d\n", touched, x, y, y - oldY, x - oldX);
     //2/3 width right side is used for scrolling
     if(x > 300) {
@@ -225,20 +262,14 @@ static void decide(int ufd, int touched, int x, int y) {
     }
     if( (x - oldX) < -180) {
         //insertEvent(ufd, EV_REL, REL_WHEEL, -1);
-        insertEvent(ufd, EV_KEY, KEY_LEFT, 1);
-        insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
-        insertEvent(ufd, EV_KEY, KEY_LEFT, 0);
-        insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
+        injectKey(ufd, KEY_LEFT);
         oldY = y;
         oldX = x;
         return;
     }
     if( (x - oldX) > 180) {
         //insertEvent(ufd, EV_REL, REL_WHEEL, 1);
-        insertEvent(ufd, EV_KEY, KEY_RIGHT, 1);
-        insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
-        insertEvent(ufd, EV_KEY, KEY_RIGHT, 0);
-        insertEvent(ufd, EV_SYN, SYN_REPORT, 0);
+        injectKey(ufd, KEY_RIGHT);
         oldY = y;
         oldX = x;
         return;
@@ -253,7 +284,7 @@ void *keyboard_monitor(void* ptr) {
     while(1) {
         struct input_event e;
         if(read(fd, &e, sizeof(e)) != sizeof(e)) break;
-        lastTimestamp = now();
+        lastKbdTimestamp = now();
     }
     return NULL;
 }
