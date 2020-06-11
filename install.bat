@@ -1,9 +1,9 @@
 adb root
 adb remount
 adb shell mount -o remount,rw /
-adb push prebuilts/uinput-titan /system/bin/uinput-titan
-adb push titan.rc /system/etc/init/
 adb install -r prebuilts/KIkaInput.apk
+adb push mtk-pad.idc /system/usr/keylayout/mtk-pad.idc
+adb shell rm -f /system/etc/init/titan.rc /system/bin/uinput-titan
 adb shell setprop persist.sys.phh.mainkeys 1
 adb shell pm enable com.iqqijni.bbkeyboard
 adb shell ime enable com.iqqijni.bbkeyboard/.keyboard_service.view.HDKeyboardService

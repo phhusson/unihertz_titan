@@ -1,15 +1,9 @@
-all: prebuilts/uinput-titan
-
-ANDROID_NDK ?= /build/apps/sdk/ndk-bundle/
-prebuilts/uinput-titan: uinput-titan.c
-	$(ANDROID_NDK)toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang uinput-titan.c -o prebuilts/uinput-titan -Wall -Wextra -Werror
-
-install: all
+install:
 	adb root
 	adb remount
 	adb shell mount -o remount,rw /
-	adb push prebuilts/uinput-titan /system/bin/uinput-titan
-	adb push titan.rc /system/etc/init/
+	adb push mtk-pad.idc /system/usr/keylayout/mtk-pad.idc
+	adb shell rm -f /system/etc/init/titan.rc /system/bin/uinput-titan
 	adb install -r prebuilts/KIkaInput.apk
 	adb shell setprop persist.sys.phh.mainkeys 1
 	adb shell pm enable com.iqqijni.bbkeyboard
